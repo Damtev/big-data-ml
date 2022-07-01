@@ -18,6 +18,8 @@ import org.apache.spark.sql.{DataFrame, Dataset, Encoder}
 import scala.util.control.Breaks.{break, breakable}
 
 class LinearRegression(override val uid: String) extends Estimator[LinearRegressionModel] with LinearRegressionParams with DefaultParamsWritable {
+    def this() = this(Identifiable.randomUID("lr"))
+
     override def fit(dataset: Dataset[_]): LinearRegressionModel = {
         val constValue = if (isLearnBias) 1.0 else 0.0
         val biasCol = lit(constValue)
@@ -38,7 +40,7 @@ class LinearRegression(override val uid: String) extends Estimator[LinearRegress
         }
 
         breakable {
-            for (_ <- 0 until getMaxIteration) {
+            for (_ <- 0L until getMaxIteration) {
                 if (euclideanDistance(curWeights.toDenseVector, prev.toDenseVector) > getTolerance) {
                     break
                 }
@@ -74,7 +76,7 @@ class LinearRegression(override val uid: String) extends Estimator[LinearRegress
     override def transformSchema(schema: StructType): StructType = validateAndTransformSchema(schema)
 }
 
-private trait LinearRegressionParams extends HasInputCol with HasOutputCol {
+trait LinearRegressionParams extends HasInputCol with HasOutputCol {
     def setInputCol(value: String): this.type = set(inputCol, value)
 
     setDefault(inputCol -> "x")
@@ -146,7 +148,7 @@ private trait LinearRegressionParams extends HasInputCol with HasOutputCol {
     }
 }
 
-private class LinearRegressionModel(override val uid: String, val weights: DenseVector[Double]) extends Model[LinearRegressionModel] with LinearRegressionParams with MLWritable {
+class LinearRegressionModel(override val uid: String, val weights: DenseVector[Double]) extends Model[LinearRegressionModel] with LinearRegressionParams with MLWritable {
     def this(weights: DenseVector[Double]) = this(Identifiable.randomUID("lrm"), weights)
 
     override def copy(extra: ParamMap): LinearRegressionModel = copyValues(new LinearRegressionModel(weights), extra)
