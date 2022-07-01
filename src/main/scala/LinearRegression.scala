@@ -1,6 +1,7 @@
 package org.apache.spark.ml.kamenev
 
-import breeze.linalg.{DenseVector, euclideanDistance, sum}
+import breeze.linalg.functions.euclideanDistance
+import breeze.linalg.{DenseVector, sum}
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 import org.apache.spark.ml.param.shared.{HasInputCol, HasOutputCol}
