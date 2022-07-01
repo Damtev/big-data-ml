@@ -3,13 +3,12 @@ package org.apache.spark.ml.kamenev
 import breeze.linalg.functions.euclideanDistance
 import breeze.linalg.{DenseVector, sum}
 import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.ml.linalg.{Vector, Vectors}
+import org.apache.spark.ml.linalg.{Vector, Vectors, VectorUDT}
 import org.apache.spark.ml.param.shared.{HasInputCol, HasOutputCol}
 import org.apache.spark.ml.param._
 import org.apache.spark.ml.util._
 import org.apache.spark.ml.{Estimator, Model}
 import org.apache.spark.mllib
-import org.apache.spark.mllib.linalg.VectorUDT
 import org.apache.spark.mllib.stat.MultivariateOnlineSummarizer
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.functions.lit
@@ -18,7 +17,9 @@ import org.apache.spark.sql.{DataFrame, Dataset, Encoder}
 
 import scala.util.control.Breaks.{break, breakable}
 
-class LinearRegression(override val uid: String) extends Estimator[LinearRegressionModel] with LinearRegressionParams with DefaultParamsWritable {
+class LinearRegression(override val uid: String)
+    extends Estimator[LinearRegressionModel] with LinearRegressionParams
+        with DefaultParamsWritable {
     def this() = this(Identifiable.randomUID("lr"))
 
     override def fit(dataset: Dataset[_]): LinearRegressionModel = {
@@ -77,79 +78,11 @@ class LinearRegression(override val uid: String) extends Estimator[LinearRegress
     override def transformSchema(schema: StructType): StructType = validateAndTransformSchema(schema)
 }
 
-trait LinearRegressionParams extends HasInputCol with HasOutputCol {
-    def setInputCol(value: String): this.type = set(inputCol, value)
+object LinearRegression extends DefaultParamsReadable[LinearRegression]
 
-    setDefault(inputCol -> "x")
-
-    def setOutputCol(value: String): this.type = set(outputCol, value)
-
-    setDefault(outputCol -> "y")
-
-    val predictionCol: Param[String] = {
-        new Param[String](parent = this, name = "predictionCol", doc = "Prediction column name")
-    }
-
-    def getPredictionCol: String = $(predictionCol)
-
-    def setPredictionCol(value: String): this.type = set(predictionCol, value)
-
-    setDefault(predictionCol -> "y_pred")
-
-    val learningRate: DoubleParam = {
-        new DoubleParam(parent = this, name = "learningRate", doc = "learning rate")
-    }
-
-    def getLearningRate: Double = $(learningRate)
-
-    def setLearningRate(value: Double): this.type = set(learningRate, value)
-
-    setDefault(learningRate -> 0.05)
-
-    val maxIteration: LongParam = {
-        new LongParam(parent = this, name = "maxIteration", doc = "max number of iterations")
-    }
-
-    def getMaxIteration: Long = $(maxIteration)
-
-    def setMaxIteration(value: Long): this.type = set(maxIteration, value)
-
-    setDefault(maxIteration -> 10000)
-
-    val tolerance: DoubleParam = {
-        new DoubleParam(parent = this, name = "tolerance", doc = "tolerance for weights change to converge")
-    }
-
-    def getTolerance: Double = $(tolerance)
-
-    def setTolerance(value: Double): this.type = set(tolerance, value)
-
-    setDefault(tolerance -> 1e-6)
-
-    val learnBias: BooleanParam = {
-        new BooleanParam(parent = this, name = "learn bias", doc = "whether to learn bias weight")
-    }
-
-    def isLearnBias: Boolean = $(learnBias)
-
-    def setLearnBias(value: Boolean): this.type = set(learnBias, value)
-
-    setDefault(learnBias -> false)
-
-    protected def validateAndTransformSchema(schema: StructType): StructType = {
-        SchemaUtils.checkColumnType(schema, getInputCol, new VectorUDT())
-
-        if (schema.fieldNames.contains(getOutputCol)) {
-            SchemaUtils.checkColumnType(schema, getOutputCol, DoubleType)
-
-            schema
-        } else {
-            SchemaUtils.appendColumn(schema, schema(getOutputCol).copy(getOutputCol))
-        }
-    }
-}
-
-class LinearRegressionModel(override val uid: String, val weights: DenseVector[Double]) extends Model[LinearRegressionModel] with LinearRegressionParams with MLWritable {
+class LinearRegressionModel(override val uid: String, val weights: DenseVector[Double])
+    extends Model[LinearRegressionModel] with LinearRegressionParams
+        with MLWritable {
     def this(weights: DenseVector[Double]) = this(Identifiable.randomUID("lrm"), weights)
 
     override def copy(extra: ParamMap): LinearRegressionModel = copyValues(new LinearRegressionModel(weights), extra)
@@ -174,6 +107,96 @@ class LinearRegressionModel(override val uid: String, val weights: DenseVector[D
 
             val vectors = Tuple1(Vectors.fromBreeze(weights))
             sqlContext.createDataFrame(Seq(vectors)).write.parquet(path + "/vectors")
+        }
+    }
+}
+
+object LinearRegressionModel extends MLReadable[LinearRegressionModel] {
+    //noinspection ConvertExpressionToSAM
+    override def read: MLReader[LinearRegressionModel] = new MLReader[LinearRegressionModel] {
+        override def load(path: String): LinearRegressionModel = {
+            implicit val encoder: Encoder[Vector] = ExpressionEncoder()
+
+            val metadata = DefaultParamsReader.loadMetadata(path, sc)
+
+            val vectors = sqlContext.read.parquet(path + "/vectors")
+            val weights = vectors.select(vectors("_1").as[Vector]).first().asBreeze.toDenseVector
+            val model = new LinearRegressionModel(weights)
+            metadata.getAndSetParams(model)
+
+            model
+        }
+    }
+}
+
+trait LinearRegressionParams extends HasInputCol with HasOutputCol {
+    def setInputCol(value: String): this.type = set(inputCol, value)
+
+    setDefault(inputCol -> "x")
+
+    def setOutputCol(value: String): this.type = set(outputCol, value)
+
+    setDefault(outputCol -> "y")
+
+    val predictionCol: Param[String] = {
+        new Param[String](parent = this, name = "predictionCol", doc = "Prediction column name")
+    }
+
+    def getPredictionCol: String = $(predictionCol)
+
+    def setPredictionCol(value: String): this.type = set(predictionCol, value)
+
+    setDefault(predictionCol -> "y_pred")
+
+    val learningRate: DoubleParam = {
+        new DoubleParam(parent = this, name = "learningRate", doc = "Learning rate")
+    }
+
+    def getLearningRate: Double = $(learningRate)
+
+    def setLearningRate(value: Double): this.type = set(learningRate, value)
+
+    setDefault(learningRate -> 0.05)
+
+    val maxIteration: LongParam = {
+        new LongParam(parent = this, name = "maxIteration", doc = "Max number of iterations")
+    }
+
+    def getMaxIteration: Long = $(maxIteration)
+
+    def setMaxIteration(value: Long): this.type = set(maxIteration, value)
+
+    setDefault(maxIteration -> 10000)
+
+    val tolerance: DoubleParam = {
+        new DoubleParam(parent = this, name = "tolerance", doc = "Tolerance for weights change to converge")
+    }
+
+    def getTolerance: Double = $(tolerance)
+
+    def setTolerance(value: Double): this.type = set(tolerance, value)
+
+    setDefault(tolerance -> 1e-6)
+
+    val learnBias: BooleanParam = {
+        new BooleanParam(parent = this, name = "learn bias", doc = "Enables/disables learning bias")
+    }
+
+    def isLearnBias: Boolean = $(learnBias)
+
+    def setLearnBias(value: Boolean): this.type = set(learnBias, value)
+
+    setDefault(learnBias -> false)
+
+    protected def validateAndTransformSchema(schema: StructType): StructType = {
+        SchemaUtils.checkColumnType(schema, getInputCol, new VectorUDT())
+
+        if (schema.fieldNames.contains(getOutputCol)) {
+            SchemaUtils.checkColumnType(schema, getOutputCol, DoubleType)
+
+            schema
+        } else {
+            SchemaUtils.appendColumn(schema, schema(getOutputCol).copy(getOutputCol))
         }
     }
 }

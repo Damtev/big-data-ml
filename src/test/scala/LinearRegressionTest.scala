@@ -1,11 +1,14 @@
 package org.apache.spark.ml.kamenev
 
 import breeze.linalg.{*, DenseMatrix, DenseVector}
+import com.google.common.io.Files
+import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+//noinspection UnstableApiUsage
 class LinearRegressionTest extends AnyFlatSpec with Matchers {
     private val DELTA = 1e-3
     private val ROWS: Int = 10000
@@ -59,6 +62,20 @@ class LinearRegressionTest extends AnyFlatSpec with Matchers {
         validateDataframe(transform)
     }
 
+    "LRM" should "save and read" in {
+        val regression = new LinearRegression()
+        val pipeline = new Pipeline().setStages(Array(regression))
+        val fit = pipeline.fit(dataset)
+
+        val tempDir = Files.createTempDir()
+        fit.write.overwrite().save(tempDir.getAbsolutePath)
+
+        val model = PipelineModel.load(tempDir.getAbsolutePath)
+        val transform = model.transform(dataset)
+
+        validateDataframe(transform)
+    }
+
     "LR" should "fit without bias" in {
         val estimator = new LinearRegression().setLearnBias(false)
         val fit = estimator.fit(dataset)
@@ -71,5 +88,18 @@ class LinearRegressionTest extends AnyFlatSpec with Matchers {
         val fit = estimator.fit(dataset)
 
         validate(fit.weights)
+    }
+
+    "LR" should "save and read" in {
+        val regression = new LinearRegression()
+        val pipeline = new Pipeline().setStages(Array(regression))
+
+        val tempDir = Files.createTempDir()
+        pipeline.write.overwrite().save(tempDir.getAbsolutePath)
+
+        val readPipeline = Pipeline.load(tempDir.getAbsolutePath)
+        val model = readPipeline.fit(dataset).stages(0)
+
+        validate(model.asInstanceOf[LinearRegressionModel].weights)
     }
 }
