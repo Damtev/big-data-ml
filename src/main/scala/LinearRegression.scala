@@ -42,7 +42,7 @@ class LinearRegression(override val uid: String) extends Estimator[LinearRegress
 
         breakable {
             for (_ <- 0L until getMaxIteration) {
-                if (euclideanDistance(curWeights.toDenseVector, prev.toDenseVector) > getTolerance) {
+                if (euclideanDistance(curWeights.toDenseVector, prev.toDenseVector) <= getTolerance) {
                     break
                 }
 
@@ -144,7 +144,7 @@ trait LinearRegressionParams extends HasInputCol with HasOutputCol {
 
             schema
         } else {
-            SchemaUtils.appendColumn(schema, schema(getOutputCol).copy(name = getOutputCol))
+            SchemaUtils.appendColumn(schema, schema(getOutputCol).copy(getOutputCol))
         }
     }
 }
